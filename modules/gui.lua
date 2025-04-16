@@ -3,6 +3,23 @@ local gui = {}
 local logger = loadfile("modules/logger.lua")()
 
 -- Funções utilitárias de criação de elementos
+
+function gui.init()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "Yzz1Hub"
+    screenGui.Parent = game.CoreGui
+
+    -- Frame principal centralizado (exemplo)
+    local mainFrame = gui.createFrame(screenGui, UDim2.new(0, 400, 0, 300), UDim2.new(0.5, -200, 0.5, -150), Color3.fromRGB(30,20,60), 5)
+    mainFrame.BackgroundTransparency = 0.1
+    mainFrame.BorderSizePixel = 0
+
+    -- Label de título
+    gui.createTextLabel(mainFrame, "Yzz1Hub", UDim2.new(1,0,0,40), UDim2.new(0,0,0,0), Enum.Font.GothamBold, 22, Color3.new(1,1,1), 0.1, Enum.TextXAlignment.Center)
+
+    logger.addLogMessage("[GUI] Interface gráfica inicializada!")
+end
+
 function gui.createFrame(parent, size, position, color, zindex)
     local frame = Instance.new("Frame", parent)
     frame.Size = size or UDim2.new(1,0,1,0)
