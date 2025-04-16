@@ -5,20 +5,27 @@ local logger = loadfile("modules/logger.lua")()
 -- Funções utilitárias de criação de elementos
 
 function gui.init()
+    wait(1) -- Garante que tudo carregou
+    -- Remove ScreenGui antigo se existir
+    pcall(function() if game.CoreGui:FindFirstChild("Yzz1Hub") then game.CoreGui.Yzz1Hub:Destroy() end end)
+    
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "Yzz1Hub"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
     screenGui.Parent = game.CoreGui
 
-    -- Frame principal centralizado (exemplo)
-    local mainFrame = gui.createFrame(screenGui, UDim2.new(0, 400, 0, 300), UDim2.new(0.5, -200, 0.5, -150), Color3.fromRGB(30,20,60), 5)
+    -- Frame principal centralizado, cor chamativa para teste
+    local mainFrame = gui.createFrame(screenGui, UDim2.new(0, 400, 0, 120), UDim2.new(0.5, -200, 0.5, -60), Color3.fromRGB(255,60,60), 5)
     mainFrame.BackgroundTransparency = 0.1
     mainFrame.BorderSizePixel = 0
 
     -- Label de título
-    gui.createTextLabel(mainFrame, "Yzz1Hub", UDim2.new(1,0,0,40), UDim2.new(0,0,0,0), Enum.Font.GothamBold, 22, Color3.new(1,1,1), 0.1, Enum.TextXAlignment.Center)
+    gui.createTextLabel(mainFrame, "Yzz1Hub ATIVO!", UDim2.new(1,0,0,40), UDim2.new(0,0,0,0), Enum.Font.GothamBold, 22, Color3.new(1,1,1), 0.1, Enum.TextXAlignment.Center)
 
     logger.addLogMessage("[GUI] Interface gráfica inicializada!")
 end
+
 
 function gui.createFrame(parent, size, position, color, zindex)
     local frame = Instance.new("Frame", parent)
