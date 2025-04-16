@@ -1,7 +1,7 @@
 -- sniffer.lua - Hook/sniffer para upgrades e placements
 local sniffer = {}
-local logger = require(script.Parent.modules.logger)
-local settings = require(script.Parent.modules.settings)
+local logger = loadfile("modules/logger.lua")()
+local settings = loadfile("modules/settings.lua")()
 
 function sniffer.init()
     local oldNamecall
