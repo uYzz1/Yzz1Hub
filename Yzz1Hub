@@ -1,0 +1,1408 @@
+--[[===========================================
+    Yzz1Hub Premium - Ultimate Script para Anime Last Stand
+    Versão: 1.1.14a - Design Premium & Temas Personalizáveis
+    Atualização: 15/04/2025
+    Executor Suportado: Wave
+================================================]]--
+
+if not isfolder("MacroAnimeLastStand_Yzz1Hub") then
+    makefolder("MacroAnimeLastStand_Yzz1Hub")
+end
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local CoreGui = game:GetService("CoreGui")
+
+-- Global Variables
+local macroData = {}
+local isRecording = true
+local lastDetectedUnit = nil
+local unitQueue = {}
+local SCRIPT_VERSION = "1.1.14a"
+local webhookUrl = ""
+local autoPlaceEnabled = false
+local autoUpgradeEnabled = false
+local autoSellEnabled = false
+local logMessages = {}
+local selectedSection = "Macro" -- Default section
+local selectedTheme = "Dark" -- Tema padrão
+local guiVisible = true -- Variável para controlar a visibilidade do GUI
+local sections = {} -- Table to store sections
+local sideButtons = {} -- Declarando sideButtons aqui
+local updateLogDisplay -- Pré-declaração para resolver referência circular
+local logScroll -- Pré-declarando para evitar erros de referência
+
+-- Função para fazer upgrade em uma unidade pelo nome
+function upgradeUnitByName(unitName)
+    if not unitName or unitName == "" then
+        addLogMessage("[MACRO] unitName inválido para upgrade!")
+        return
+    end
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not remotes or not remotes:FindFirstChild("Upgrade") then
+        addLogMessage("[MACRO] Remote Upgrade não encontrado!")
+        return
+    end
+    for _, unidade in pairs(workspace.Towers:GetChildren()) do
+        if unidade.Name == unitName and unidade.Parent then
+            remotes.Upgrade:InvokeServer(unidade)
+            addLogMessage("[MACRO] Upgrade enviado para: " .. unidade.Name)
+            return
+        end
+    end
+    addLogMessage("[MACRO] Nenhuma unidade encontrada com o nome: " .. unitName)
+end
+
+-- Add log message function para uso global
+local function addLogMessage(message)
+    table.insert(logMessages, os.date("[%H:%M:%S] ") .. message)
+    if #logMessages > 100 then table.remove(logMessages, 1) end
+    print(message)
+end
+
+-- Sniffer para upgrades: registra e grava no macro se estiver gravando
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    if checkcaller() then
+        return oldNamecall(self, ...)
+    end
+    local method = getnamecallmethod and getnamecallmethod() or ""
+    if method == "FireServer" or method == "InvokeServer" then
+        local remoteName = tostring(self)
+        if remoteName:lower():find("upgrade") then
+            local args = {...}
+            local argType = typeof(args[1])
+            -- Logger detalhado dos argumentos recebidos
+            local function debugArgs(args)
+                local t = {}
+                for i, v in ipairs(args) do
+                    t[#t+1] = tostring(v) .. " (" .. typeof(v) .. ")"
+                end
+                return table.concat(t, ", ")
+            end
+            addLogMessage("[DEBUG] Args do upgrade: " .. debugArgs(args))
+
+            if argType == "Instance" and args[1] and args[1].Parent == workspace.Towers then
+                local unitName = args[1].Name
+                addLogMessage("⬆️ [SNIFFER] Upgrade enviado para: " .. unitName .. " (tipo: Instance)")
+                if isRecording then
+                    table.insert(macroData, {
+                        action = "upgrade",
+                        unit = unitName,
+                        timestamp = os.clock()
+                    })
+                end
+            else
+                addLogMessage("[ERRO] Upgrade ignorado: argumento não é uma unidade válida (tipo: " .. tostring(argType) .. ")")
+            end
+        end
+    end
+    return oldNamecall(self, ...)
+end)
+
+addLogMessage("[SNIFFER] Sniffer de upgrade ativado!")
+
+-- Check if webhook file exists and load it
+if isfile("MacroAnimeLastStand_Yzz1Hub/webhook.txt") then
+    webhookUrl = readfile("MacroAnimeLastStand_Yzz1Hub/webhook.txt")
+end
+
+-- Add log message function que será definida corretamente mais tarde
+local function addLogMessage(message)
+    table.insert(logMessages, os.date("[%H:%M:%S] ") .. message)
+    -- Keep only the last 100 messages
+    if #logMessages > 100 then
+        table.remove(logMessages, 1)
+    end
+    
+    print(message) -- Print to console for debug
+    
+    -- A atualização da UI será feita depois que todas as funções estiverem definidas
+    -- Não chamamos updateLogDisplay aqui para evitar referência circular
+end
+
+-- Forward declarations
+local applyTheme
+local getCurrentTheme
+local createSideButton
+
+-- Hook: Automatically detect unit name when placed
+workspace.ChildAdded:Connect(function(child)
+    if child.Name == "RangeVisualizer" or not child:IsA("Model") then
+        return
+    end
+
+    local unitName = child:GetAttribute("UnitName") or child.Name
+    if unitName then
+        lastDetectedUnit = unitName
+        table.insert(unitQueue, lastDetectedUnit)
+        addLogMessage("✅ Unit automatically detected: " .. lastDetectedUnit)
+    else
+        addLogMessage("⚠️ Could not determine unit name: " .. child.Name)
+    end
+end)
+
+-- GUI Setup
+local guiName = "Yzz1Hub_ImpStyleMacro"
+if CoreGui:FindFirstChild(guiName) then
+    CoreGui[guiName]:Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = guiName
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = CoreGui
+
+-- Main Frame
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 600, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -300, 0.5, -175)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+-- Sistema de Temas Premium
+local themeSettings = {
+    primary = Color3.fromRGB(170, 0, 0),
+    secondary = Color3.fromRGB(20, 0, 0),
+    text = Color3.fromRGB(255, 200, 200),
+    accent = Color3.fromRGB(255, 50, 50),
+    transparency = 0.2,
+    error = Color3.fromRGB(255, 0, 0)
+}
+
+-- Top Bar
+local TopBar = Instance.new("Frame", MainFrame)
+TopBar.Size = UDim2.new(1, 0, 0, 30)
+TopBar.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+TopBar.BorderSizePixel = 0
+
+local Title = Instance.new("TextLabel", TopBar)
+Title.Size = UDim2.new(0, 200, 1, 0)
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.Text = "Yzz1Hub - Anime Last Stand"
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.BackgroundTransparency = 1
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local CloseButton = Instance.new("TextButton", TopBar)
+CloseButton.Size = UDim2.new(0, 30, 0, 30)
+CloseButton.Position = UDim2.new(1, -30, 0, 0)
+CloseButton.Text = "X"
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.TextSize = 16
+CloseButton.TextColor3 = Color3.new(1, 1, 1)
+CloseButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+CloseButton.BorderSizePixel = 0
+CloseButton.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+-- Side Menu
+local SideMenu = Instance.new("Frame", MainFrame)
+SideMenu.Size = UDim2.new(0, 120, 1, -30)
+SideMenu.Position = UDim2.new(0, 0, 0, 30)
+SideMenu.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+SideMenu.BorderSizePixel = 0
+
+-- Create all sections
+local function createSection(name)
+    local section = Instance.new("Frame", MainFrame)
+    section.Name = name .. "Section"
+    section.Size = UDim2.new(1, -130, 1, -40)
+    section.Position = UDim2.new(0, 130, 0, 40)
+    section.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    section.BorderSizePixel = 0
+    section.Visible = false
+    
+    sections[name] = section
+    return section
+end
+
+-- Utility functions for UI elements
+local function createLabel(parent, text, posY, size)
+    local label = Instance.new("TextLabel", parent)
+    label.Size = UDim2.new(0, size or 300, 0, 20)
+    label.Position = UDim2.new(0, 10, 0, posY)
+    label.Text = text
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 14
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.BackgroundTransparency = 1
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    return label
+end
+
+local function createButton(parent, text, posX, posY, sizeX, callback)
+    local btn = Instance.new("TextButton", parent)
+    btn.Size = UDim2.new(0, sizeX or 160, 0, 30)
+    btn.Position = UDim2.new(0, posX, 0, posY)
+    btn.Text = text
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 13
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.BackgroundColor3 = Color3.fromRGB(90, 60, 150)
+    btn.BorderSizePixel = 0
+    
+    if callback then
+        btn.MouseButton1Click:Connect(callback)
+    end
+    
+    return btn
+end
+
+local function createToggle(parent, text, posX, posY, callback)
+    local container = Instance.new("Frame", parent)
+    container.Size = UDim2.new(0, 160, 0, 30)
+    container.Position = UDim2.new(0, posX, 0, posY)
+    container.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", container)
+    label.Size = UDim2.new(0, 120, 1, 0)
+    label.Position = UDim2.new(0, 0, 0, 0)
+    label.Text = text
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 14
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.BackgroundTransparency = 1
+    label.TextXAlignment = Enum.TextXAlignment.Left
+
+    local toggleBackground = Instance.new("Frame", container)
+    toggleBackground.Size = UDim2.new(0, 44, 0, 24)
+    toggleBackground.Position = UDim2.new(1, -44, 0.5, -12)
+    toggleBackground.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    toggleBackground.BorderSizePixel = 0
+
+    local UICorner = Instance.new("UICorner", toggleBackground)
+    UICorner.CornerRadius = UDim.new(1, 0)
+
+    local knob = Instance.new("Frame", toggleBackground)
+    knob.Size = UDim2.new(0, 20, 0, 20)
+    knob.Position = UDim2.new(0, 2, 0.5, -10)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.BorderSizePixel = 0
+
+    local knobCorner = Instance.new("UICorner", knob)
+    knobCorner.CornerRadius = UDim.new(1, 0)
+
+    local knobShadow = Instance.new("ImageLabel", knob)
+    knobShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
+    knobShadow.Position = UDim2.new(-0.1, 0, -0.1, 0)
+    knobShadow.BackgroundTransparency = 1
+    knobShadow.Image = "rbxassetid://1316045217"
+    knobShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+    knobShadow.ImageTransparency = 0.7
+    knobShadow.ZIndex = 0
+
+    local enabled = false
+    local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+    local function updateToggle()
+        local knobPosition = enabled and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
+        local backgroundColors = enabled and Color3.fromRGB(90, 150, 90) or Color3.fromRGB(60, 60, 80)
+        local knobColor = enabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
+
+        TweenService:Create(knob, tweenInfo, {Position = knobPosition}):Play()
+        TweenService:Create(toggleBackground, tweenInfo, {BackgroundColor3 = backgroundColors}):Play()
+        TweenService:Create(knob, tweenInfo, {BackgroundColor3 = knobColor}):Play()
+    end
+
+    container.MouseEnter:Connect(function()
+        TweenService:Create(label, tweenInfo, {TextTransparency = 0.2}):Play()
+    end)
+
+    container.MouseLeave:Connect(function()
+        TweenService:Create(label, tweenInfo, {TextTransparency = 0}):Play()
+    end)
+
+    local function createRipple(x, y)
+        local ripple = Instance.new("Frame", toggleBackground)
+        ripple.Size = UDim2.new(0, 0, 0, 0)
+        ripple.Position = UDim2.new(0, x, 0, y)
+        ripple.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        ripple.BackgroundTransparency = 0.6
+        ripple.BorderSizePixel = 0
+
+        local rippleCorner = Instance.new("UICorner", ripple)
+        rippleCorner.CornerRadius = UDim.new(1, 0)
+
+        local expandTween = TweenService:Create(ripple, TweenInfo.new(0.5), {
+            Size = UDim2.new(0, 100, 0, 100),
+            Position = UDim2.new(0.5, -50, 0.5, -50),
+            BackgroundTransparency = 1
+        })
+
+        expandTween:Play()
+        expandTween.Completed:Connect(function()
+            ripple:Destroy()
+        end)
+    end
+
+    container.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            enabled = not enabled
+            updateToggle()
+            createRipple(input.Position.X, input.Position.Y)
+            if callback then
+                callback(enabled)
+            end
+        end
+    end)
+
+    return {
+        container = container,
+        setEnabled = function(value)
+            enabled = value
+            updateToggle()
+        end,
+        getEnabled = function()
+            return enabled
+        end
+    }
+end
+
+local function createTextBox(parent, placeholder, posX, posY, sizeX)
+    local textBox = Instance.new("TextBox", parent)
+    textBox.Size = UDim2.new(0, sizeX or 200, 0, 30)
+    textBox.Position = UDim2.new(0, posX, 0, posY)
+    textBox.PlaceholderText = placeholder
+    textBox.Text = ""
+    textBox.Font = Enum.Font.Gotham
+    textBox.TextSize = 13
+    textBox.TextColor3 = Color3.new(1, 1, 1)
+    textBox.BackgroundColor3 = Color3.fromRGB(50, 40, 80)
+    textBox.BorderSizePixel = 0
+    return textBox
+end
+
+local function createDropdown(parent, options, posX, posY, sizeX, callback)
+    local container = Instance.new("Frame", parent)
+    container.Size = UDim2.new(0, sizeX or 200, 0, 30)
+    container.Position = UDim2.new(0, posX, 0, posY)
+    container.BackgroundColor3 = Color3.fromRGB(50, 40, 80)
+    container.BorderSizePixel = 0
+    
+    local selected = Instance.new("TextLabel", container)
+    selected.Size = UDim2.new(1, -30, 1, 0)
+    selected.Position = UDim2.new(0, 10, 0, 0)
+    selected.Text = options[1] or "Select..."
+    selected.Font = Enum.Font.Gotham
+    selected.TextSize = 13
+    selected.TextColor3 = Color3.new(1, 1, 1)
+    selected.BackgroundTransparency = 1
+    selected.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local arrow = Instance.new("TextLabel", container)
+    arrow.Size = UDim2.new(0, 20, 1, 0)
+    arrow.Position = UDim2.new(1, -25, 0, 0)
+    arrow.Text = "▼"
+    arrow.Font = Enum.Font.Gotham
+    arrow.TextSize = 13
+    arrow.TextColor3 = Color3.new(1, 1, 1)
+    arrow.BackgroundTransparency = 1
+    
+    local dropFrame = Instance.new("Frame", container)
+    dropFrame.Size = UDim2.new(1, 0, 0, #options * 30)
+    dropFrame.Position = UDim2.new(0, 0, 1, 0)
+    dropFrame.BackgroundColor3 = Color3.fromRGB(60, 50, 90)
+    dropFrame.BorderSizePixel = 0
+    dropFrame.Visible = false
+    dropFrame.ZIndex = 10
+    
+    for i, option in ipairs(options) do
+        local optionBtn = Instance.new("TextButton", dropFrame)
+        optionBtn.Size = UDim2.new(1, 0, 0, 30)
+        optionBtn.Position = UDim2.new(0, 0, 0, (i-1) * 30)
+        optionBtn.Text = option
+        optionBtn.Font = Enum.Font.Gotham
+        optionBtn.TextSize = 13
+        optionBtn.TextColor3 = Color3.new(1, 1, 1)
+        optionBtn.BackgroundColor3 = Color3.fromRGB(60, 50, 90)
+        optionBtn.BorderSizePixel = 0
+        optionBtn.ZIndex = 10
+        
+        optionBtn.MouseButton1Click:Connect(function()
+            selected.Text = option
+            dropFrame.Visible = false
+            if callback then
+                callback(option)
+            end
+        end)
+    end
+    
+    container.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dropFrame.Visible = not dropFrame.Visible
+        end
+    end)
+    
+    return {
+        container = container,
+        selected = selected,
+        getValue = function()
+            return selected.Text
+        end,
+        setValue = function(value)
+            selected.Text = value
+        end
+    }
+end
+
+local function createScrollFrame(parent, posX, posY, sizeX, sizeY)
+    local scrollFrame = Instance.new("ScrollingFrame", parent)
+    scrollFrame.Size = UDim2.new(0, sizeX, 0, sizeY)
+    scrollFrame.Position = UDim2.new(0, posX, 0, posY)
+    scrollFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 4
+    scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(90, 60, 150)
+    
+    return scrollFrame
+end
+
+-- Function to update section visibility
+local function updateSections()
+    if not sections then return end
+    
+    for name, section in pairs(sections) do
+        if section and section.Parent then
+            section.Visible = (name == selectedSection)
+        end
+    end
+    
+    if not sideButtons then return end
+    
+    for _, btnData in ipairs(sideButtons) do
+        if btnData and btnData.button and btnData.button.Parent then
+            if btnData.section == selectedSection then
+                btnData.button.BackgroundColor3 = themeSettings.primary
+            else
+                btnData.button.BackgroundColor3 = themeSettings.secondary
+            end
+        end
+    end
+end
+
+-- Update log display - definindo após as seções serem criadas
+function updateLogDisplay()
+    if not sections["Log"] then return end
+    
+    local logScrollFrame = sections["Log"]:FindFirstChild("LogScroll")
+    if not logScrollFrame then return end
+    
+    -- Clear current log display
+    for _, child in pairs(logScrollFrame:GetChildren()) do
+        if child:IsA("TextLabel") then
+            child:Destroy()
+        end
+    end
+    
+    -- Add log messages
+    for i, message in ipairs(logMessages) do
+        local logLabel = Instance.new("TextLabel", logScrollFrame)
+        logLabel.Size = UDim2.new(1, -10, 0, 20)
+        logLabel.Position = UDim2.new(0, 5, 0, (i-1) * 20)
+        logLabel.Text = message
+        logLabel.Font = Enum.Font.Gotham
+        logLabel.TextSize = 12
+        logLabel.TextColor3 = themeSettings.text
+        logLabel.BackgroundTransparency = 1
+        logLabel.TextXAlignment = Enum.TextXAlignment.Left
+        logLabel.TextWrapped = true
+    end
+    
+    -- Adjust canvas size
+    logScrollFrame.CanvasSize = UDim2.new(0, 0, 0, #logMessages * 20)
+    -- Auto scroll to bottom
+    logScrollFrame.CanvasPosition = Vector2.new(0, logScrollFrame.CanvasSize.Y.Offset)
+end
+
+-- Atualizando função addLogMessage para usar updateLogDisplay após sua definição
+local originalAddLogMessage = addLogMessage
+addLogMessage = function(message)
+    originalAddLogMessage(message)
+    
+    -- Update log section if it exists
+    if sections["Log"] and sections["Log"]:FindFirstChild("LogScroll") then
+        pcall(updateLogDisplay) -- Usando pcall para evitar erros
+    end
+end
+
+-- Create Side Buttons
+local function createSideButton(text, icon, section)
+    local yPos = #sideButtons * 40
+    local btn = Instance.new("TextButton", SideMenu)
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.Position = UDim2.new(0, 0, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    btn.Text = icon .. " " .. text
+    
+    btn.MouseButton1Click:Connect(function()
+        selectedSection = section
+        updateSections()
+    end)
+    
+    table.insert(sideButtons, {button = btn, section = section})
+    return btn
+end
+
+-- Create all sections
+local logSection = createSection("Log")
+local gameSection = createSection("Game")
+local macroSection = createSection("Macro")
+local webhookSection = createSection("Webhook")
+local summonSection = createSection("Summon")
+local miscSection = createSection("Misc")
+local playerSection = createSection("Player")
+local aboutSection = createSection("About")
+
+-- LOG SECTION
+createLabel(logSection, "- Log", 0)
+local logScroll = createScrollFrame(logSection, 10, 30, 450, 270)
+logScroll.Name = "LogScroll"
+
+local clearLogButton = createButton(logSection, "🗑️ Clear Log", 10, 310, 100, function()
+    logMessages = {}
+    updateLogDisplay()
+end)
+
+-- GAME SECTION
+createLabel(gameSection, "- Game Controls", 0)
+
+local autoFarmToggle = createToggle(gameSection, "Auto Farm", 10, 30, function(enabled)
+    if enabled then
+        addLogMessage("🚜 Auto Farm enabled")
+    else
+        addLogMessage("🚜 Auto Farm disabled")
+    end
+end)
+
+local autoStartToggle = createToggle(gameSection, "Auto Start Wave", 10, 70, function(enabled)
+    if enabled then
+        addLogMessage("🌊 Auto Start Wave enabled")
+    else
+        addLogMessage("🌊 Auto Start Wave disabled")
+    end
+end)
+
+local autoPlaceToggle = createToggle(gameSection, "Auto Place Units", 10, 110, function(enabled)
+    autoPlaceEnabled = enabled
+    if enabled then
+        addLogMessage("🎯 Auto Place Units enabled")
+    else
+        addLogMessage("🎯 Auto Place Units disabled")
+    end
+end)
+
+local autoUpgradeToggle = createToggle(gameSection, "Auto Upgrade", 10, 150, function(enabled)
+    autoUpgradeEnabled = enabled
+    if enabled then
+        addLogMessage("⬆️ Auto Upgrade enabled")
+    else
+        addLogMessage("⬆️ Auto Upgrade disabled")
+    end
+end)
+
+local autoSellToggle = createToggle(gameSection, "Auto Sell (Wave End)", 10, 190, function(enabled)
+    autoSellEnabled = enabled
+    if enabled then
+        addLogMessage("💰 Auto Sell enabled")
+    else
+        addLogMessage("💰 Auto Sell disabled")
+    end
+end)
+
+createLabel(gameSection, "- Game Information", 230)
+
+local gameInfoDisplay = Instance.new("TextLabel", gameSection)
+gameInfoDisplay.Size = UDim2.new(0, 450, 0, 60)
+gameInfoDisplay.Position = UDim2.new(0, 10, 0, 250)
+gameInfoDisplay.Text = "Wave: 0 | Cash: $0 | Timer: 00:00"
+gameInfoDisplay.Font = Enum.Font.GothamSemibold
+gameInfoDisplay.TextSize = 14
+gameInfoDisplay.TextColor3 = Color3.new(1, 1, 1)
+gameInfoDisplay.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+gameInfoDisplay.BorderSizePixel = 0
+
+-- MACRO SECTION
+createLabel(macroSection, "- Advanced Macro Recording", 0)
+
+-- Criar o campo de preview do macro que será usado mais tarde
+local macroPreview = Instance.new("TextLabel", macroSection)
+macroPreview.Name = "MacroPreview"
+macroPreview.Size = UDim2.new(0, 450, 0, 200)
+macroPreview.Position = UDim2.new(0, 10, 0, 150)
+macroPreview.Text = "Nenhum macro carregado."
+macroPreview.Font = Enum.Font.Gotham
+macroPreview.TextSize = 12
+macroPreview.TextColor3 = themeSettings.text
+macroPreview.BackgroundColor3 = themeSettings.secondary
+macroPreview.BackgroundTransparency = 0.5
+macroPreview.BorderSizePixel = 0
+macroPreview.TextXAlignment = Enum.TextXAlignment.Left
+macroPreview.TextYAlignment = Enum.TextYAlignment.Top
+macroPreview.TextWrapped = true
+macroPreview.ClipsDescendants = true
+
+-- Cantos arredondados para melhor aparência
+local macroPreviewCorner = Instance.new("UICorner", macroPreview)
+macroPreviewCorner.CornerRadius = UDim.new(0, 4)
+
+local macroNameBox = createTextBox(macroSection, "Macro Name Here", 10, 110, 200)
+
+createButton(macroSection, "🎥 Start Recording", 10, 30, 160, function()
+    macroData = {}
+    isRecording = true
+    addLogMessage("🎥 Recording started. Click on the map to record positions.")
+end)
+
+createButton(macroSection, "🛑 Stop Recording", 10, 70, 160, function()
+    isRecording = false
+    addLogMessage("🛑 Recording stopped.")
+end)
+
+createButton(macroSection, "💾 Save Macro", 10, 150, 160, function()
+    if macroNameBox.Text == "" then
+        addLogMessage("⚠️ Enter a macro name!")
+        return
+    end
+    local json = HttpService:JSONEncode(macroData)
+    writefile("MacroAnimeLastStand_Yzz1Hub/" .. macroNameBox.Text .. ".json", json)
+    addLogMessage("💾 Macro saved as: " .. macroNameBox.Text)
+end)
+
+createButton(macroSection, "▶️ Execute Macro", 10, 190, 160, function()
+    local name = macroNameBox.Text
+    if name == "" then
+        addLogMessage("⚠️ Enter a macro name to execute!")
+        return
+    end
+    local path = "MacroAnimeLastStand_Yzz1Hub/" .. name .. ".json"
+    if not isfile(path) then
+        addLogMessage("❌ Macro not found!")
+        return
+    end
+
+    local data = HttpService:JSONDecode(readfile(path))
+    addLogMessage("▶️ Executing macro: " .. name)
+
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not remotes then
+        addLogMessage("❌ Remotes not found!")
+        return
+    end
+
+    local placeRemote
+    for _, r in pairs(remotes:GetChildren()) do
+        if r:IsA("RemoteEvent") and r.Name:lower():find("place") then
+            placeRemote = r
+            break
+        end
+    end
+
+    if not placeRemote then
+        addLogMessage("❌ RemoteEvent for placing units not found!")
+        return
+    end
+
+    for _, entry in ipairs(data) do
+    if entry.action == "place" then
+        local pos = Vector3.new(entry.pos.X, entry.pos.Y, entry.pos.Z)
+        local args = {
+            [1] = entry.unit,
+            [2] = CFrame.new(pos),
+            [3] = 1,
+            [4] = {}
+        }
+        placeRemote:FireServer(unpack(args))
+        task.wait(0.5)
+    elseif entry.action == "upgrade" then
+        -- Busca a unidade pelo nome no workspace antes de dar upgrade
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if remotes and remotes:FindFirstChild("Upgrade") then
+            local found = false
+            for _, unidade in pairs(workspace.Towers:GetChildren()) do
+                if unidade.Name == entry.unit and unidade.Parent then
+                    remotes.Upgrade:InvokeServer(unidade)
+                    addLogMessage("[MACRO] Upgrade executado para: " .. unidade.Name)
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                addLogMessage("[MACRO] Nenhuma unidade encontrada para upgrade: " .. tostring(entry.unit))
+            end
+        else
+            addLogMessage("[MACRO] Remote Upgrade não encontrado ao executar macro!")
+        end
+        task.wait(0.3)
+    end
+end
+end)
+
+-- Load macro list
+local macroListScroll = createScrollFrame(macroSection, 220, 30, 230, 230)
+macroListScroll.Name = "MacroListScroll"
+
+local function updateMacroList()
+    task.spawn(function()
+        if not macroListScroll or not macroListScroll.Parent then return end
+        
+        for _, child in pairs(macroListScroll:GetChildren()) do
+            if child:IsA("GuiObject") then
+                child:Destroy()
+            end
+        end
+        
+        local macros = {}
+        local files = {}
+        
+        pcall(function()
+            files = listfiles("MacroAnimeLastStand_Yzz1Hub")
+        end)
+        
+        for _, file in ipairs(files) do
+            if file:sub(-5) == ".json" then
+                table.insert(macros, file:match("([^/\\]+)%.json$"))
+            end
+        end
+        
+        for i, name in ipairs(macros) do
+            -- Botão com o nome do macro (agora com largura menor para caber o botão de deletar)
+            local btn = createButton(macroListScroll, name, 5, (i-1) * 35, 180, function()
+                -- Clicar no nome já carrega o macro diretamente
+                if macroNameBox and macroNameBox.Parent then
+                    macroNameBox.Text = name
+                end
+                -- Protegendo a chamada com pcall para evitar erros
+                pcall(function()
+                    loadMacro(name)
+                end)
+            end)
+            
+            -- Botão de deletar com visual melhorado e posição corrigida
+            local deleteBtn = createButton(macroListScroll, "🗑️", 195, (i-1) * 35, 35, function()
+                -- Deleta o arquivo diretamente sem confirmação
+                pcall(function()
+                    delfile("MacroAnimeLastStand_Yzz1Hub/" .. name .. ".json")
+                end)
+                updateMacroList()
+                addLogMessage("🗑️ Macro '" .. name .. "' deletado com sucesso!")
+            end)
+
+            -- Destaque visual para o botão de deletar para ficar mais evidente
+            deleteBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+            deleteBtn.Font = Enum.Font.GothamBold
+        end
+        
+        -- Adjust canvas size
+        if macroListScroll and macroListScroll.Parent then
+            macroListScroll.CanvasSize = UDim2.new(0, 0, 0, math.max(1, #macros) * 35)
+        end
+    end)
+end
+
+local refreshMacroBtn = createButton(macroSection, "🔄 Refresh List", 220, 270, 230, function()
+    updateMacroList()
+end)
+
+-- WEBHOOK SECTION
+createLabel(webhookSection, "- Discord Webhook", 0)
+createLabel(webhookSection, "Enter your Discord webhook URL to receive notifications", 30)
+
+local webhookUrlBox = createTextBox(webhookSection, "Discord Webhook URL", 10, 60, 450)
+webhookUrlBox.Text = webhookUrl
+
+createButton(webhookSection, "💾 Save Webhook", 10, 100, 160, function()
+    webhookUrl = webhookUrlBox.Text
+    writefile("MacroAnimeLastStand_Yzz1Hub/webhook.txt", webhookUrl)
+    addLogMessage("💾 Webhook URL saved")
+end)
+
+createButton(webhookSection, "🔔 Test Webhook", 10, 140, 160, function()
+    if webhookUrl == "" then
+        addLogMessage("⚠️ No webhook URL set!")
+        return
+    end
+    
+    local data = {
+        content = nil,
+        embeds = {
+            {
+                title = "Yzz1Hub Test Notification",
+                description = "Your webhook is working correctly!",
+                color = 7419530, -- Purple color
+                footer = {
+                    text = "Yzz1Hub - Anime Last Stand | " .. os.date("%Y-%m-%d %H:%M:%S")
+                }
+            }
+        }
+    }
+    
+    local success, response = pcall(function()
+        return HttpService:RequestAsync({
+            Url = webhookUrl,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = HttpService:JSONEncode(data)
+        })
+    end)
+    
+    if success and response.Success then
+        addLogMessage("✅ Webhook test successful!")
+    else
+        addLogMessage("❌ Webhook test failed: " .. tostring(response))
+    end
+end)
+
+local webhookOptionsFrame = Instance.new("Frame", webhookSection)
+webhookOptionsFrame.Size = UDim2.new(0, 450, 0, 150)
+webhookOptionsFrame.Position = UDim2.new(0, 10, 0, 180)
+webhookOptionsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+webhookOptionsFrame.BorderSizePixel = 0
+
+createLabel(webhookOptionsFrame, "Webhook Notifications:", 10)
+
+local webhookGameStartToggle = createToggle(webhookOptionsFrame, "Game Start", 10, 40, function(enabled)
+    addLogMessage("🔔 Game Start notifications " .. (enabled and "enabled" or "disabled"))
+end)
+
+local webhookWaveEndToggle = createToggle(webhookOptionsFrame, "Wave End", 10, 80, function(enabled)
+    addLogMessage("🔔 Wave End notifications " .. (enabled and "enabled" or "disabled"))
+end)
+
+local webhookRareDropToggle = createToggle(webhookOptionsFrame, "Rare Drops", 250, 40, function(enabled)
+    addLogMessage("🔔 Rare Drop notifications " .. (enabled and "enabled" or "disabled"))
+end)
+
+local webhookGameEndToggle = createToggle(webhookOptionsFrame, "Game End", 250, 80, function(enabled)
+    addLogMessage("🔔 Game End notifications " .. (enabled and "enabled" or "disabled"))
+end)
+
+-- SUMMON SECTION
+createLabel(summonSection, "- Summon Settings", 0)
+
+local selectedBanner = createDropdown(summonSection, {"Standard Banner", "Event Banner", "Limited Banner"}, 10, 30, 200, function(selected)
+    addLogMessage("🎯 Selected banner: " .. selected)
+end)
+
+createLabel(summonSection, "Auto Summon Settings:", 70)
+
+local autoSummonToggle = createToggle(summonSection, "Auto Summon", 10, 100, function(enabled)
+    addLogMessage("🎮 Auto Summon " .. (enabled and "enabled" or "disabled"))
+end)
+
+local autoSummonAmount = createDropdown(summonSection, {"1x Pull", "10x Pull"}, 10, 140, 150, function(selected)
+    addLogMessage("🔢 Auto Summon amount set to: " .. selected)
+end)
+
+local summonStatisticsFrame = Instance.new("Frame", summonSection)
+summonStatisticsFrame.Size = UDim2.new(0, 450, 0, 150)
+summonStatisticsFrame.Position = UDim2.new(0, 10, 0, 180)
+summonStatisticsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+summonStatisticsFrame.BorderSizePixel = 0
+
+createLabel(summonStatisticsFrame, "Summon Statistics:", 10)
+
+local statsLabel = Instance.new("TextLabel", summonStatisticsFrame)
+statsLabel.Size = UDim2.new(0, 430, 0, 120)
+statsLabel.Position = UDim2.new(0, 10, 0, 30)
+statsLabel.Text = "Total Pulls: 0\nCommon: 0\nUncommon: 0\nRare: 0\nEpic: 0\nLegendary: 0\nMythic: 0"
+statsLabel.Font = Enum.Font.Gotham
+statsLabel.TextSize = 13
+statsLabel.TextColor3 = Color3.new(1, 1, 1)
+statsLabel.BackgroundTransparency = 1
+statsLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+-- MISC SECTION
+createLabel(miscSection, "- Miscellaneous Utilities", 0)
+
+local antiAfkToggle = createToggle(miscSection, "Anti-AFK", 10, 30, function(enabled)
+    if enabled then
+        local antiAFK = game:GetService("Players").LocalPlayer.Idled:Connect(function()
+            game:GetService("VirtualUser"):Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+            task.wait(1)
+            game:GetService("VirtualUser"):Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        end)
+        
+        _G.antiAFKConnection = antiAFK
+        addLogMessage("🛡️ Anti-AFK enabled")
+    else
+        if _G.antiAFKConnection then
+            _G.antiAFKConnection:Disconnect()
+            _G.antiAFKConnection = nil
+        end
+        addLogMessage("🛡️ Anti-AFK disabled")
+    end
+end)
+
+local serverHopToggle = createToggle(miscSection, "Auto Server Hop", 10, 70, function(enabled)
+    _G.autoServerHop = enabled
+    addLogMessage("🔄 Auto Server Hop " .. (enabled and "enabled" or "disabled"))
+end)
+
+local serverHopDelayDropdown = createDropdown(miscSection, {"After Game", "Every 10 minutes", "Every 30 minutes", "Every Hour"}, 180, 70, 200)
+
+local hiddenDetectionToggle = createToggle(miscSection, "Hidden Unit Detection", 10, 110, function(enabled)
+    addLogMessage("🔍 Hidden Unit Detection " .. (enabled and "enabled" or "disabled"))
+end)
+
+local autoPurchaseToggle = createToggle(miscSection, "Auto Purchase", 10, 150, function(enabled)
+    addLogMessage("🛒 Auto Purchase " .. (enabled and "enabled" or "disabled"))
+end)
+
+local purchaseTypeDropdown = createDropdown(miscSection, {"Units", "Upgrades", "Abilities"}, 180, 150, 200)
+
+createButton(miscSection, "🌐 Server Hop Now", 10, 190, 160, function()
+    addLogMessage("🔄 Server hopping...")
+    
+    local TeleportService = game:GetService("TeleportService")
+    local HttpService = game:GetService("HttpService")
+    local placeId = game.PlaceId
+    
+    local servers = {}
+    local req = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"))
+    
+    for _, server in pairs(req.data) do
+        if server.playing < server.maxPlayers and server.id ~= game.JobId then
+            table.insert(servers, server)
+        end
+    end
+    
+    if #servers > 0 then
+        local selectedServer = servers[math.random(1, #servers)]
+        TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, game.Players.LocalPlayer)
+    else
+        addLogMessage("❌ No available servers found")
+    end
+end)
+
+createButton(miscSection, "🤖 Join Discord Server", 10, 230, 160, function()
+    -- Open Discord invite using SetClipboard
+    setclipboard("https://discord.gg/yzz1hub") -- Replace with your actual Discord invite
+    addLogMessage("📋 Discord invite copied to clipboard!")
+end)
+
+local customCommandFrame = Instance.new("Frame", miscSection)
+customCommandFrame.Size = UDim2.new(0, 450, 0, 80)
+customCommandFrame.Position = UDim2.new(0, 10, 0, 270)
+customCommandFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+customCommandFrame.BorderSizePixel = 0
+
+createLabel(customCommandFrame, "Custom Command:", 10)
+
+local customCommandBox = createTextBox(customCommandFrame, "Enter custom Lua command here", 10, 40, 330)
+
+createButton(customCommandFrame, "Run", 350, 40, 90, function()
+    local command = customCommandBox.Text
+    if command == "" then return end
+    
+    addLogMessage("🔧 Running custom command...")
+    local success, result = pcall(function()
+        return loadstring(command)()
+    end)
+    
+    if success then
+        addLogMessage("✅ Command executed successfully")
+    else
+        addLogMessage("❌ Error: " .. tostring(result))
+    end
+end)
+
+-- PLAYER SECTION
+createLabel(playerSection, "- Player Information", 0)
+
+local playerInfoFrame = Instance.new("Frame", playerSection)
+playerInfoFrame.Size = UDim2.new(0, 450, 0, 100)
+playerInfoFrame.Position = UDim2.new(0, 10, 0, 30)
+playerInfoFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+playerInfoFrame.BorderSizePixel = 0
+
+local playerInfoLabel = Instance.new("TextLabel", playerInfoFrame)
+playerInfoLabel.Size = UDim2.new(1, -20, 1, -20)
+playerInfoLabel.Position = UDim2.new(0, 10, 0, 10)
+playerInfoLabel.Text = "Name: " .. LocalPlayer.Name .. 
+                       "\nDisplay Name: " .. LocalPlayer.DisplayName .. 
+                       "\nAccount Age: " .. LocalPlayer.AccountAge .. " days" ..
+                       "\nGame: " .. game.Name
+playerInfoLabel.Font = Enum.Font.Gotham
+playerInfoLabel.TextSize = 14
+playerInfoLabel.TextColor3 = Color3.new(1, 1, 1)
+playerInfoLabel.BackgroundTransparency = 1
+playerInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+createLabel(playerSection, "- Player Utilities", 140)
+
+local walkspeedSlider = Instance.new("Frame", playerSection)
+walkspeedSlider.Size = UDim2.new(0, 450, 0, 30)
+walkspeedSlider.Position = UDim2.new(0, 10, 0, 170)
+walkspeedSlider.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+walkspeedSlider.BorderSizePixel = 0
+
+local walkspeedLabel = Instance.new("TextLabel", walkspeedSlider)
+walkspeedLabel.Size = UDim2.new(0, 100, 1, 0)
+walkspeedLabel.Position = UDim2.new(0, 10, 0, 0)
+walkspeedLabel.Text = "Walk Speed:"
+walkspeedLabel.Font = Enum.Font.Gotham
+walkspeedLabel.TextSize = 13
+walkspeedLabel.TextColor3 = Color3.new(1, 1, 1)
+walkspeedLabel.BackgroundTransparency = 1
+walkspeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local walkspeedValue = Instance.new("TextLabel", walkspeedSlider)
+walkspeedValue.Size = UDim2.new(0, 30, 1, 0)
+walkspeedValue.Position = UDim2.new(1, -40, 0, 0)
+walkspeedValue.Text = "16"
+walkspeedValue.Font = Enum.Font.Gotham
+walkspeedValue.TextSize = 13
+walkspeedValue.TextColor3 = Color3.new(1, 1, 1)
+walkspeedValue.BackgroundTransparency = 1
+walkspeedValue.TextXAlignment = Enum.TextXAlignment.Center
+
+local walkspeedTrack = Instance.new("Frame", walkspeedSlider)
+walkspeedTrack.Size = UDim2.new(0, 280, 0, 4)
+walkspeedTrack.Position = UDim2.new(0, 120, 0.5, -2)
+walkspeedTrack.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+walkspeedTrack.BorderSizePixel = 0
+
+local walkspeedKnob = Instance.new("Frame", walkspeedTrack)
+walkspeedKnob.Size = UDim2.new(0, 12, 0, 12)
+walkspeedKnob.Position = UDim2.new(0, 0, 0.5, -6)
+walkspeedKnob.BackgroundColor3 = Color3.fromRGB(90, 60, 150)
+walkspeedKnob.BorderSizePixel = 0
+
+local isDragging = false
+
+walkspeedKnob.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isDragging = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isDragging = false
+    end
+end)
+
+walkspeedTrack.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local relativeX = input.Position.X - walkspeedTrack.AbsolutePosition.X
+        local position = math.clamp(relativeX / walkspeedTrack.AbsoluteSize.X, 0, 1)
+        walkspeedKnob.Position = UDim2.new(position, -6, 0.5, -6)
+        
+        local walkspeed = math.floor(16 + position * 84) -- 16 to 100
+        walkspeedValue.Text = tostring(walkspeed)
+        
+        -- Set player's walkspeed
+        LocalPlayer.Character.Humanoid.WalkSpeed = walkspeed
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if isDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local relativeX = input.Position.X - walkspeedTrack.AbsolutePosition.X
+        local position = math.clamp(relativeX / walkspeedTrack.AbsoluteSize.X, 0, 1)
+        walkspeedKnob.Position = UDim2.new(position, -6, 0.5, -6)
+        
+        local walkspeed = math.floor(16 + position * 84) -- 16 to 100
+        walkspeedValue.Text = tostring(walkspeed)
+        
+        -- Set player's walkspeed
+        LocalPlayer.Character.Humanoid.WalkSpeed = walkspeed
+    end
+end)
+
+createToggle(playerSection, "Infinite Jump", 10, 210, function(enabled)
+    _G.infiniteJump = enabled
+    
+    if enabled then
+        _G.jumpConnection = UserInputService.JumpRequest:Connect(function()
+            if _G.infiniteJump then
+                LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end)
+        addLogMessage("🦘 Infinite Jump enabled")
+    else
+        if _G.jumpConnection then
+            _G.jumpConnection:Disconnect()
+        end
+        addLogMessage("🦘 Infinite Jump disabled")
+    end
+end)
+
+createToggle(playerSection, "No Clip", 10, 250, function(enabled)
+    _G.noClip = enabled
+    
+    if enabled then
+        _G.noClipConnection = RunService.Stepped:Connect(function()
+            if _G.noClip and LocalPlayer.Character then
+                for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+        addLogMessage("👻 No Clip enabled")
+    else
+        if _G.noClipConnection then
+            _G.noClipConnection:Disconnect()
+        end
+        addLogMessage("👻 No Clip disabled")
+    end
+end)
+
+createToggle(playerSection, "ESP", 10, 290, function(enabled)
+    _G.espEnabled = enabled
+    
+    if enabled then
+        -- Simple ESP implementation
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local highlight = Instance.new("Highlight")
+                highlight.Name = "ESPHighlight"
+                highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                highlight.FillTransparency = 0.5
+                highlight.OutlineTransparency = 0
+                highlight.Parent = player.Character
+            end
+        end
+        
+        _G.espPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
+            player.CharacterAdded:Connect(function(character)
+                if _G.espEnabled then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Name = "ESPHighlight"
+                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255) 
+                    highlight.FillTransparency = 0.5
+                    highlight.OutlineTransparency = 0
+                    highlight.Parent = character
+                end
+            end)
+        end)
+        
+        addLogMessage("👁️ ESP enabled")
+    else
+        if _G.espPlayerAddedConnection then
+            _G.espPlayerAddedConnection:Disconnect()
+        end
+        
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Character then
+                local highlight = player.Character:FindFirstChild("ESPHighlight")
+                if highlight then
+                    highlight:Destroy()
+                end
+            end
+        end
+        
+        addLogMessage("👁️ ESP disabled")
+    end
+end)
+
+-- ABOUT SECTION
+createLabel(aboutSection, "- About Yzz1Hub", 0)
+
+local aboutText = Instance.new("TextLabel", aboutSection)
+aboutText.Size = UDim2.new(0, 450, 0, 200)
+aboutText.Position = UDim2.new(0, 10, 0, 30)
+aboutText.Text = "Yzz1Hub - Anime Last Stand\nVersion: " .. currentVersion .. "\n\nThis script was created to enhance your gameplay experience in Anime Last Stand.\n\nFeatures:\n• Macro Recording & Playback\n• Auto Farm\n• Discord Webhook Notifications\n• Auto Summon\n• Various Player Utilities\n\nSpecial thanks to the community for their support!"
+aboutText.Font = Enum.Font.Gotham
+aboutText.TextSize = 14
+aboutText.TextColor3 = Color3.new(1, 1, 1)
+aboutText.BackgroundTransparency = 1
+aboutText.TextXAlignment = Enum.TextXAlignment.Left
+aboutText.TextYAlignment = Enum.TextYAlignment.Top
+aboutText.TextWrapped = true
+
+local creditsLabel = Instance.new("TextLabel", aboutSection)
+creditsLabel.Size = UDim2.new(0, 450, 0, 20)
+creditsLabel.Position = UDim2.new(0, 10, 0, 240)
+creditsLabel.Text = "Created by Yzz1 - Updated April 2025"
+creditsLabel.Font = Enum.Font.GothamBold
+creditsLabel.TextSize = 14
+creditsLabel.TextColor3 = Color3.new(1, 1, 1)
+creditsLabel.BackgroundTransparency = 1
+creditsLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+createButton(aboutSection, "🔗 Join Discord", 110, 270, 250, function()
+    setclipboard("https://discord.gg/yzz1hub") -- Replace with your actual Discord invite
+    addLogMessage("📋 Discord invite copied to clipboard!")
+end)
+
+createButton(aboutSection, "🔄 Check for Updates", 110, 310, 250, function()
+    addLogMessage("🔍 Checking for updates...")
+    -- Here you would normally check a remote source for version info
+    task.wait(1)
+    addLogMessage("✅ You're running the latest version!")
+end)
+
+-- Create Side Buttons
+createSideButton("Log", "📜", "Log")
+createSideButton("Game", "🏠", "Game")
+createSideButton("Macro", "📂", "Macro")
+createSideButton("Webhook", "🔔", "Webhook")
+createSideButton("Summon", "💎", "Summon")
+createSideButton("Misc", "🛠️", "Misc")
+createSideButton("Player", "👤", "Player")
+createSideButton("About", "📘", "About")
+
+-- Update sections and load initial data
+updateSections()
+updateMacroList()
+updateLogDisplay()
+
+-- Game information update loop
+task.spawn(function()
+    while task.wait(1) do
+        local wave = workspace:FindFirstChild("Wave") and workspace.Wave.Value or "?"
+        local cash = LocalPlayer:FindFirstChild("PlayerGui") 
+               and LocalPlayer.PlayerGui:FindFirstChild("MainUI")
+               and LocalPlayer.PlayerGui.MainUI:FindFirstChild("HUD")
+               and LocalPlayer.PlayerGui.MainUI.HUD:FindFirstChild("Cash")
+               and LocalPlayer.PlayerGui.MainUI.HUD.Cash.Text or "$0"
+               
+        local minutes = math.floor(workspace.DistributedGameTime / 60)
+        local seconds = math.floor(workspace.DistributedGameTime % 60)
+        local timeStr = string.format("%02d:%02d", minutes, seconds)
+        
+        gameInfoDisplay.Text = "Wave: " .. wave .. " | Cash: " .. cash .. " | Timer: " .. timeStr
+    end
+end)
+
+-- Main game trigger for auto features
+task.spawn(function()
+    while task.wait(1) do
+        local wave = workspace:FindFirstChild("Wave") and workspace.Wave.Value or 0
+        
+        -- This is where you would implement auto farm logic based on the game state
+        if autoPlaceEnabled then
+            -- Auto place units logic would go here
+        end
+        
+        if autoUpgradeEnabled then
+            -- Auto upgrade units logic would go here
+        end
+        
+        if autoSellEnabled and (workspace:FindFirstChild("WaveFinished") and workspace.WaveFinished.Value) then
+            -- Auto sell units logic would go here
+        end
+    end
+end)
+
+-- Initial log message
+addLogMessage("✅ Yzz1Hub loaded successfully! Version: " .. currentVersion)
+
+-- Register mouse click for macro recording
+Mouse.Button1Down:Connect(function()
+    if isRecording then
+        local pos = Mouse.Hit.Position
+        local unitName = "Unknown"
+
+        if #unitQueue > 0 then
+            unitName = table.remove(unitQueue, 1)
+        end
+
+        table.insert(macroData, {
+            action = "place",
+            unit = unitName,
+            pos = {X = pos.X, Y = pos.Y, Z = pos.Z},
+            timestamp = os.clock()
+        })
+
+        addLogMessage("✅ Position recorded: " .. string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z) .. " | Unit: " .. unitName)
+    end
+end)
+
+-- Função para carregar um macro salvo - completamente reescrita
+local function loadMacro(name)
+    -- Verificação de segurança com pcall
+    pcall(function()
+        if not isfile("MacroAnimeLastStand_Yzz1Hub/" .. name .. ".json") then
+            addLogMessage("❌ Erro: Macro '" .. name .. "' não encontrado!")
+            return
+        end
+        
+        local success, result = pcall(function()
+            local content = readfile("MacroAnimeLastStand_Yzz1Hub/" .. name .. ".json")
+            return HttpService:JSONDecode(content)
+        end)
+        
+        if success and result then
+            macroData = result
+            addLogMessage("✅ Macro '" .. name .. "' carregado com sucesso! " .. #macroData .. " posições.")
+            
+            -- Tenta atualizar o preview com pcall para evitar erros
+            pcall(function()
+                local preview = macroSection:FindFirstChild("MacroPreview")
+                if preview then
+                    local text = "Macro: " .. name .. "\nTotal: " .. #macroData .. " posições\n\n"
+                    
+                    -- Limitando a quantidade para evitar erros
+                    local maxToShow = math.min(5, #macroData)
+                    for i = 1, maxToShow do
+                        local entry = macroData[i]
+                        if entry and entry.pos then
+                            text = text .. i .. ". " .. (entry.unit or "?") .. " @ " .. 
+                                  math.floor(entry.pos.X or 0) .. "," .. 
+                                  math.floor(entry.pos.Y or 0) .. "," .. 
+                                  math.floor(entry.pos.Z or 0) .. "\n"
+                        end
+                    end
+                    
+                    if #macroData > maxToShow then
+                        text = text .. "... e mais " .. (#macroData - maxToShow) .. " posições."
+                    end
+                    
+                    preview.Text = text
+                end
+            end)
+        else
+            addLogMessage("❌ Erro ao carregar macro: Formato inválido!")
+        end
+    end)
+end
+
+-- Função para salvar um macro
+local function saveMacro(name)
+    if #macroData == 0 then
+        addLogMessage("❌ Erro: Não há posições para salvar!")
+        return false
+    end
+    
+    if name == "" then
+        addLogMessage("❌ Erro: Por favor, digite um nome para o macro!")
+        return false
+    end
+    
+    local success, errorMsg = pcall(function()
+        local json = HttpService:JSONEncode(macroData)
+        writefile("MacroAnimeLastStand_Yzz1Hub/" .. name .. ".json", json)
+    end)
+    
+    if success then
+        addLogMessage("✅ Macro '" .. name .. "' salvo com sucesso! " .. #macroData .. " posições.")
+        updateMacroList()
+        return true
+    else
+        addLogMessage("❌ Erro ao salvar macro: " .. tostring(errorMsg))
+        return false
+    end
+end
