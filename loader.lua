@@ -1,100 +1,51 @@
---[[===========================================
-    Yzz1Hub Premium - Loader para Wave Executor
-    Versão: 0.0.21 - Modo Local
-================================================]]--
-
 -- Verificar ambiente
-if not writefile or not readfile or not loadstring then
-    warn("⚠️ Este executor não é compatível com Yzz1Hub")
-    return
-end
+if not game:IsLoaded() then game.Loaded:Wait() end
 
--- Verificar e criar pasta para macros
+-- URLs dos módulos
+local urls = {
+    ["utils"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/utils.lua",
+    ["ui"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/ui.lua",
+    ["macros"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/macros.lua",
+    ["main"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/main.lua"
+}
+
+-- Criar pasta para macros
 if not isfolder("MacroAnimeLastStand_Yzz1Hub") then
     makefolder("MacroAnimeLastStand_Yzz1Hub")
 end
 
--- Função principal para carregar o script
-local function loadYzz1Hub()
-    -- Interface de carregamento simples
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "Yzz1HubLoader"
-    
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 300, 0, 100)
-    frame.Position = UDim2.new(0.5, -150, 0.5, -50)
-    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-    frame.BorderSizePixel = 0
-    frame.Parent = screenGui
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = frame
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 30)
-    title.Position = UDim2.new(0, 0, 0, 10)
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 18
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.BackgroundTransparency = 1
-    title.Text = "Carregando Yzz1Hub..."
-    title.Parent = frame
-    
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, 0, 0, 20)
-    status.Position = UDim2.new(0, 0, 0.5, 0)
-    status.Font = Enum.Font.Gotham
-    status.TextSize = 14
-    status.TextColor3 = Color3.fromRGB(200, 200, 200)
-    status.BackgroundTransparency = 1
-    status.Text = "Verificando arquivos..."
-    status.Parent = frame
-    
-    -- Tentar adicionar o ScreenGui ao CoreGui
-    pcall(function()
-        syn.protect_gui(screenGui)
-        screenGui.Parent = game:GetService("CoreGui")
-    end)
-    
-    if not screenGui.Parent then
-        screenGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-    end
-    
-    -- Verificar se os arquivos existem localmente
-    local requiredFiles = {"main.lua", "utils.lua", "macros.lua", "ui.lua"}
-    local missingFiles = {}
-    
-    for _, file in ipairs(requiredFiles) do
-        if not isfile(file) then
-            table.insert(missingFiles, file)
-        end
-    end
-    
-    if #missingFiles > 0 then
-        status.Text = "Arquivos não encontrados: " .. table.concat(missingFiles, ", ")
-        status.TextColor3 = Color3.fromRGB(255, 100, 100)
-        wait(5)
-        screenGui:Destroy()
-        return
-    end
-    
-    -- Carregar o módulo principal
-    status.Text = "Iniciando script..."
-    local success, errorMsg = pcall(function()
-        loadstring(readfile("main.lua"))()
-    end)
-    
-    if not success then
-        status.Text = "Erro ao carregar script: " .. tostring(errorMsg)
-        status.TextColor3 = Color3.fromRGB(255, 100, 100)
-        wait(5)
-    end
-    
-    -- Remover a interface de carregamento após 2 segundos
-    wait(2)
-    screenGui:Destroy()
+-- Carregar módulos em ordem
+local utils = loadstring(game:HttpGet(urls["utils"]))()
+print("✅ Módulo carregado: utils")
+
+local ui = loadstring(game:HttpGet(urls["ui"]))()
+print("✅ Módulo carregado: ui")
+
+local macros = loadstring(game:HttpGet(urls["macros"]))()
+print("✅ Módulo carregado: macros")
+
+-- Definir variáveis globais para os módulos
+getgenv().Yzz1Hub_utils = utils
+getgenv().Yzz1Hub_ui = ui
+getgenv().Yzz1Hub_macros = macros
+
+-- Inicializar módulos
+ui.initialize(utils, macros)
+macros.initialize()
+
+-- Verificar se os módulos foram carregados corretamente
+if not utils.SCRIPT_VERSION then
+    warn("❌ Erro: SCRIPT_VERSION não está definido no módulo utils")
+    return
 end
 
--- Iniciar o carregamento
-loadYzz1Hub() 
+print("📦 Versão do script: " .. utils.SCRIPT_VERSION)
+
+-- Carregar e executar o script principal
+local success, result = pcall(function()
+    loadstring(game:HttpGet(urls["main"]))()
+end)
+
+if not success then
+    warn("❌ Erro ao carregar o script principal: " .. tostring(result))
+end

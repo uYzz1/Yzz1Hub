@@ -10,20 +10,6 @@ if not isfolder("MacroAnimeLastStand_Yzz1Hub") then
     makefolder("MacroAnimeLastStand_Yzz1Hub")
 end
 
--- Carregar módulos
-local function loadModule(name)
-    local success, module = pcall(function()
-        return loadstring(readfile(name .. ".lua"))()
-    end)
-    
-    if not success then
-        warn("Erro ao carregar módulo: " .. name)
-        return {}
-    end
-    
-    return module
-end
-
 -- Serviços do Roblox
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -35,10 +21,16 @@ local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 local CoreGui = game:GetService("CoreGui")
 
--- Carregar módulos
-local utils = loadModule("utils")
-local ui = loadModule("ui")
-local macros = loadModule("macros")
+-- Os módulos já foram carregados pelo loader.lua
+-- Vamos usar as variáveis globais que foram definidas
+local utils = getgenv().Yzz1Hub_utils
+local ui = getgenv().Yzz1Hub_ui
+local macros = getgenv().Yzz1Hub_macros
+
+if not utils or not ui or not macros then
+    warn("❌ Erro: Módulos não foram carregados corretamente pelo loader")
+    return
+end
 
 -- Iniciar o script
 ui.createMainUI()
