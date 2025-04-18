@@ -14,32 +14,70 @@ if not isfolder("MacroAnimeLastStand_Yzz1Hub") then
     makefolder("MacroAnimeLastStand_Yzz1Hub")
 end
 
+-- Função para carregar um módulo
+local function loadModule(name)
+    local success, content = pcall(function()
+        return game:HttpGet(urls[name])
+    end)
+    
+    if not success then
+        warn("❌ Erro ao baixar módulo " .. name .. ": " .. tostring(content))
+        return nil
+    end
+    
+    local func, err = loadstring(content)
+    if not func then
+        warn("❌ Erro ao compilar módulo " .. name .. ": " .. tostring(err))
+        return nil
+    end
+    
+    local success, result = pcall(func)
+    if not success then
+        warn("❌ Erro ao executar módulo " .. name .. ": " .. tostring(result))
+        return nil
+    end
+    
+    return result
+end
+
 -- Carregar módulos em ordem
-local utils = loadstring(game:HttpGet(urls["utils"]))()
-print("✅ Módulo carregado: utils")
+local utils = loadModule("utils")
+if not utils then
+    warn("❌ Falha ao carregar módulo utils")
+    return
+end
 
-local ui = loadstring(game:HttpGet(urls["ui"]))()
-print("✅ Módulo carregado: ui")
-
-local macros = loadstring(game:HttpGet(urls["macros"]))()
-print("✅ Módulo carregado: macros")
-
--- Definir variáveis globais para os módulos
+-- Definir utils globalmente primeiro
 getgenv().Yzz1Hub_utils = utils
+
+-- Verificar SCRIPT_VERSION
+if not utils.SCRIPT_VERSION then
+    warn("❌ SCRIPT_VERSION não encontrado no módulo utils")
+    return
+end
+
+print("📦 Versão do script: " .. utils.SCRIPT_VERSION)
+
+-- Carregar UI e macros
+local ui = loadModule("ui")
+if not ui then
+    warn("❌ Falha ao carregar módulo ui")
+    return
+end
+
+local macros = loadModule("macros")
+if not macros then
+    warn("❌ Falha ao carregar módulo macros")
+    return
+end
+
+-- Definir variáveis globais para os outros módulos
 getgenv().Yzz1Hub_ui = ui
 getgenv().Yzz1Hub_macros = macros
 
 -- Inicializar módulos
 ui.initialize(utils, macros)
 macros.initialize()
-
--- Verificar se os módulos foram carregados corretamente
-if not utils.SCRIPT_VERSION then
-    warn("❌ Erro: SCRIPT_VERSION não está definido no módulo utils")
-    return
-end
-
-print("📦 Versão do script: " .. utils.SCRIPT_VERSION)
 
 -- Carregar e executar o script principal
 local success, result = pcall(function()
