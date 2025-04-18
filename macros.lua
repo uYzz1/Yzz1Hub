@@ -15,25 +15,22 @@ local autoPlaceEnabled = false
 local autoUpgradeEnabled = false
 local autoSellEnabled = false
 
--- Referência para utils (será definida na inicialização)
-local utils
+-- Referência para módulos externos (serão definidos na inicialização)
+local utils, settings
 
 -- Inicializa o módulo
-function macros.initialize()
-    -- Tentar obter o módulo utils
-    local success, result = pcall(function()
-        return loadstring(readfile("utils.lua"))()
-    end)
+function macros.initialize(utilsModule, settingsModule)
+    utils = utilsModule
+    settings = settingsModule
     
-    if success then
-        utils = result
-    else
+    -- Verificar dependências
+    if not utils then
         utils = {
             addLogMessage = function(msg) 
                 print("Log: " .. msg) 
             end
         }
-        warn("Erro ao carregar módulo utils no módulo de macros")
+        warn("Módulo utils não fornecido ao inicializar macros")
     end
     
     macros.updateMacroList()

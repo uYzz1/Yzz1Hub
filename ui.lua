@@ -17,60 +17,94 @@ local selectedTheme = "Dark"
 local listMacros
 
 -- Referência para outros módulos (serão definidos na inicialização)
-local utils, macros
+local utils, macros, components, theme, autofarm, settings
 
 -- Variáveis globais para referência entre funções
 ui.logScroll = nil
 ui.updateLogDisplay = nil
 
 -- Inicializa o módulo
-function ui.initialize(utilsModule, macrosModule)
+function ui.initialize(utilsModule, macrosModule, componentsModule, themeModule, autofarmModule, settingsModule)
     utils = utilsModule
     macros = macrosModule
+    components = componentsModule
+    theme = themeModule
+    autofarm = autofarmModule
+    settings = settingsModule
     
-    -- Configurar tema
-    ui.applyTheme(selectedTheme)
+    -- Aplicar tema das configurações, se disponível
+    if settings and settings.get then
+        local configTheme = settings.get("theme")
+        if configTheme then
+            ui.applyTheme(configTheme)
+        else
+            ui.applyTheme(selectedTheme)
+        end
+    else
+        -- Configurar tema padrão
+        ui.applyTheme(selectedTheme)
+    end
 end
 
 -- Aplica um tema
-function ui.applyTheme(theme)
-    selectedTheme = theme
+function ui.applyTheme(themeName)
+    selectedTheme = themeName
     
-    local themes = {
-        Dark = {
-            background = Color3.fromRGB(30, 30, 40),
-            sidebar = Color3.fromRGB(20, 20, 25),
-            text = Color3.fromRGB(255, 255, 255),
-            accent = Color3.fromRGB(90, 60, 150),
-            button = Color3.fromRGB(90, 60, 150),
-            highlight = Color3.fromRGB(110, 80, 180)
-        },
-        Light = {
-            background = Color3.fromRGB(240, 240, 245),
-            sidebar = Color3.fromRGB(220, 220, 230),
-            text = Color3.fromRGB(50, 50, 60),
-            accent = Color3.fromRGB(100, 80, 200),
-            button = Color3.fromRGB(100, 80, 200),
-            highlight = Color3.fromRGB(130, 100, 220)
-        },
-        Purple = {
-            background = Color3.fromRGB(40, 30, 60),
-            sidebar = Color3.fromRGB(30, 20, 45),
-            text = Color3.fromRGB(240, 230, 255),
-            accent = Color3.fromRGB(120, 80, 220),
-            button = Color3.fromRGB(120, 80, 220),
-            highlight = Color3.fromRGB(150, 100, 255)
-        }
-    }
-    
-    local currentTheme = themes[theme] or themes.Dark
-    
-    -- Aplicar tema aos elementos da interface
-    if MainFrame then
-        MainFrame.BackgroundColor3 = currentTheme.background
-        if Sidebar then
-            Sidebar.BackgroundColor3 = currentTheme.sidebar
+    -- Se temos o módulo de tema, usá-lo
+    if theme then
+        theme.setTheme(themeName)
+        local currentTheme = theme.getCurrentTheme()
+        
+        -- Aplicar tema aos elementos da interface
+        if MainFrame then
+            MainFrame.BackgroundColor3 = currentTheme.background
+            if Sidebar then
+                Sidebar.BackgroundColor3 = currentTheme.sidebar
+            end
         end
+    else
+        -- Fallback para temas internos
+        local themes = {
+            Dark = {
+                background = Color3.fromRGB(30, 30, 40),
+                sidebar = Color3.fromRGB(20, 20, 25),
+                text = Color3.fromRGB(255, 255, 255),
+                accent = Color3.fromRGB(90, 60, 150),
+                button = Color3.fromRGB(90, 60, 150),
+                highlight = Color3.fromRGB(110, 80, 180)
+            },
+            Light = {
+                background = Color3.fromRGB(240, 240, 245),
+                sidebar = Color3.fromRGB(220, 220, 230),
+                text = Color3.fromRGB(50, 50, 60),
+                accent = Color3.fromRGB(100, 80, 200),
+                button = Color3.fromRGB(100, 80, 200),
+                highlight = Color3.fromRGB(130, 100, 220)
+            },
+            Purple = {
+                background = Color3.fromRGB(40, 30, 60),
+                sidebar = Color3.fromRGB(30, 20, 45),
+                text = Color3.fromRGB(240, 230, 255),
+                accent = Color3.fromRGB(120, 80, 220),
+                button = Color3.fromRGB(120, 80, 220),
+                highlight = Color3.fromRGB(150, 100, 255)
+            }
+        }
+        
+        local currentTheme = themes[themeName] or themes.Dark
+        
+        -- Aplicar tema aos elementos da interface
+        if MainFrame then
+            MainFrame.BackgroundColor3 = currentTheme.background
+            if Sidebar then
+                Sidebar.BackgroundColor3 = currentTheme.sidebar
+            end
+        end
+    end
+    
+    -- Salvar tema nas configurações se disponível
+    if settings and settings.set then
+        settings.set("theme", themeName)
     end
 end
 
@@ -407,6 +441,12 @@ end
 
 -- Cria um botão padrão
 function ui.createButton(parent, text, posX, posY, sizeX, callback)
+    -- Se temos o módulo de componentes, usá-lo
+    if components and components.createButton then
+        return components.createButton(parent, text, posX, posY, sizeX, callback)
+    end
+    
+    -- Fallback para implementação interna
     local btn = Instance.new("TextButton", parent)
     btn.Size = UDim2.new(0, sizeX or 160, 0, 34)
     btn.Position = UDim2.new(0, posX, 0, posY)
