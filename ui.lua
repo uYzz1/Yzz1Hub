@@ -268,16 +268,34 @@ end
 
 -- Cria uma seção na interface
 function ui.createSection(name)
-    local section = Instance.new("Frame", MainFrame)
-    section.Size = UDim2.new(1, -140, 1, -40)
-    section.Position = UDim2.new(0, 130, 0, 30)
+    if not MainFrame then return nil end
+    
+    -- Encontrar o container para as seções
+    local sectionsContainer = MainFrame:FindFirstChild("SectionsContainer")
+    if not sectionsContainer then
+        -- Criar se não existir
+        sectionsContainer = Instance.new("Frame")
+        sectionsContainer.Name = "SectionsContainer"
+        sectionsContainer.Size = UDim2.new(1, -130, 1, 0)
+        sectionsContainer.Position = UDim2.new(0, 130, 0, 0)
+        sectionsContainer.BackgroundTransparency = 1
+        sectionsContainer.Parent = MainFrame
+    end
+    
+    -- Criar a seção
+    local section = Instance.new("Frame")
+    section.Name = "Section_" .. name
+    section.Size = UDim2.new(1, -40, 1, -40)
+    section.Position = UDim2.new(0, 20, 0, 20)
     section.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
     section.BorderSizePixel = 0
     section.Visible = false
+    section.Parent = sectionsContainer
     
     -- Cantos arredondados
-    local corner = Instance.new("UICorner", section)
+    local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = section
     
     sections[name] = section
     return section
@@ -289,16 +307,78 @@ function ui.createNavigation()
     
     local navContainer = Instance.new("Frame")
     navContainer.Name = "NavContainer"
-    navContainer.Size = UDim2.new(1, 0, 1, -80)
-    navContainer.Position = UDim2.new(0, 0, 0, 80)
+    navContainer.Size = UDim2.new(1, -20, 1, -80)
+    navContainer.Position = UDim2.new(0, 10, 0, 80)
     navContainer.BackgroundTransparency = 1
     navContainer.Parent = Sidebar
     
     local navLayout = Instance.new("UIListLayout")
-    navLayout.Padding = UDim.new(0, 5)
+    navLayout.Padding = UDim.new(0, 8)
     navLayout.Parent = navContainer
     
-    -- Adicionar botões de navegação aqui
+    -- Adicionar botões de navegação
+    local navButtons = {
+        {name = "Macro", icon = "rbxassetid://7733715400"},
+        {name = "Auto Farm", icon = "rbxassetid://7733774602"},
+        {name = "Configurações", icon = "rbxassetid://7734053495"}
+    }
+    
+    for _, btnData in ipairs(navButtons) do
+        local btn = Instance.new("TextButton")
+        btn.Name = "NavButton_" .. btnData.name
+        btn.Size = UDim2.new(1, 0, 0, 40)
+        btn.Text = btnData.name
+        btn.Font = Enum.Font.GothamSemibold
+        btn.TextSize = 14
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+        btn.BorderSizePixel = 0
+        btn.TextXAlignment = Enum.TextXAlignment.Left
+        btn.AutoButtonColor = false
+        btn.Parent = navContainer
+        
+        -- Padding interno
+        local padding = Instance.new("UIPadding")
+        padding.PaddingLeft = UDim.new(0, 40)
+        padding.Parent = btn
+        
+        -- Cantos arredondados
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = btn
+        
+        -- Ícone
+        local icon = Instance.new("ImageLabel")
+        icon.Size = UDim2.new(0, 20, 0, 20)
+        icon.Position = UDim2.new(0, 10, 0.5, -10)
+        icon.BackgroundTransparency = 1
+        icon.Image = btnData.icon
+        icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+        icon.Parent = btn
+        
+        -- Efeitos visuais
+        btn.MouseEnter:Connect(function()
+            if selectedSection ~= btnData.name then
+                btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+            end
+        end)
+        
+        btn.MouseLeave:Connect(function()
+            if selectedSection ~= btnData.name then
+                btn.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+            end
+        end)
+        
+        -- Função de clique
+        btn.MouseButton1Click:Connect(function()
+            ui.selectSection(btnData.name)
+        end)
+        
+        -- Destacar botão inicial selecionado
+        if btnData.name == selectedSection then
+            btn.BackgroundColor3 = Color3.fromRGB(70, 60, 110)
+        end
+    end
 end
 
 -- Seleciona uma seção para exibir
@@ -311,11 +391,16 @@ function ui.selectSection(name)
     end
     
     -- Atualiza a UI da barra lateral
-    for _, btn in pairs(MainFrame.Sidebar:GetChildren()) do
-        if btn:IsA("TextButton") and btn.Text == name then
-            btn.BackgroundColor3 = Color3.fromRGB(70, 60, 110)
-        elseif btn:IsA("TextButton") then
-            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    if MainFrame then
+        local sidebarFrame = MainFrame:FindFirstChild("Sidebar")
+        if sidebarFrame then
+            for _, btn in pairs(sidebarFrame:GetChildren()) do
+                if btn:IsA("TextButton") and btn.Text == name then
+                    btn.BackgroundColor3 = Color3.fromRGB(70, 60, 110)
+                elseif btn:IsA("TextButton") then
+                    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+                end
+            end
         end
     end
 end
