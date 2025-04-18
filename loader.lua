@@ -6,6 +6,10 @@ local urls = {
     ["utils"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/utils.lua",
     ["ui"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/ui.lua",
     ["macros"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/macros.lua",
+    ["components"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/components.lua",
+    ["theme"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/theme.lua",
+    ["autofarm"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/autofarm.lua",
+    ["settings"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/settings.lua",
     ["main"] = "https://raw.githubusercontent.com/uYzz1/Yzz1Hub/main/main.lua"
 }
 
@@ -58,6 +62,10 @@ end
 getgenv().Yzz1Hub_utils = nil
 getgenv().Yzz1Hub_ui = nil
 getgenv().Yzz1Hub_macros = nil
+getgenv().Yzz1Hub_components = nil
+getgenv().Yzz1Hub_theme = nil
+getgenv().Yzz1Hub_autofarm = nil
+getgenv().Yzz1Hub_settings = nil
 
 -- Carregar utils primeiro
 print("🔄 Iniciando carregamento do módulo utils...")
@@ -82,6 +90,21 @@ end
 getgenv().Yzz1Hub_utils = utils
 print("📦 Versão do script: " .. utils.SCRIPT_VERSION)
 
+-- Carregar componentes e tema
+print("🔄 Iniciando carregamento do módulo components...")
+local components = loadModule("components")
+if not components then
+    warn("❌ Falha ao carregar módulo components")
+    return
+end
+
+print("🔄 Iniciando carregamento do módulo theme...")
+local theme = loadModule("theme")
+if not theme then
+    warn("❌ Falha ao carregar módulo theme")
+    return
+end
+
 -- Carregar UI e macros
 print("🔄 Iniciando carregamento do módulo ui...")
 local ui = loadModule("ui")
@@ -97,9 +120,28 @@ if not macros then
     return
 end
 
--- Definir variáveis globais para os outros módulos
+-- Carregar autofarm e settings
+print("🔄 Iniciando carregamento do módulo autofarm...")
+local autofarm = loadModule("autofarm")
+if not autofarm then
+    warn("❌ Falha ao carregar módulo autofarm")
+    return
+end
+
+print("🔄 Iniciando carregamento do módulo settings...")
+local settings = loadModule("settings")
+if not settings then
+    warn("❌ Falha ao carregar módulo settings")
+    return
+end
+
+-- Definir variáveis globais para todos os módulos
+getgenv().Yzz1Hub_components = components
+getgenv().Yzz1Hub_theme = theme
 getgenv().Yzz1Hub_ui = ui
 getgenv().Yzz1Hub_macros = macros
+getgenv().Yzz1Hub_autofarm = autofarm
+getgenv().Yzz1Hub_settings = settings
 
 -- Verificar se todos os módulos estão disponíveis globalmente
 if not (getgenv().Yzz1Hub_utils and getgenv().Yzz1Hub_ui and getgenv().Yzz1Hub_macros) then
@@ -109,8 +151,10 @@ end
 
 -- Inicializar módulos
 print("🔄 Inicializando módulos...")
-ui.initialize(utils, macros)
-macros.initialize()
+settings.initialize(utils)
+autofarm.initialize(utils)
+ui.initialize(utils, macros, components, theme, autofarm, settings)
+macros.initialize(utils, settings)
 
 -- Carregar e executar o script principal
 print("🔄 Carregando script principal...")
